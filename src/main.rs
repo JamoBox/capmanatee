@@ -7,6 +7,9 @@ use std::fmt;
 
 use ether::{to_ethertype, Ethertype};
 
+const TCP: u8 = 6;
+const UDP: u8 = 17;
+
 struct FiveTuple {
     l3_src: u64,
     l3_dst: u64,
@@ -41,9 +44,11 @@ impl fmt::Display for FiveTuple {
     }
 }
 
-fn handle_ipv4(pkt: &Packet, fivetuple: &mut FiveTuple) -> usize {
-    let ip_offset: usize = 14;
-
+fn handle_ipv4(
+    pkt: &Packet,
+    offset: usize,
+    fivetuple: &mut FiveTuple,
+) -> usize {
     fn getaddr(pkt: &Packet, ip_offset: usize, pos: usize) -> u32 {
         let mut addr = 0;
         for i in 0..3 {
@@ -54,19 +59,45 @@ fn handle_ipv4(pkt: &Packet, fivetuple: &mut FiveTuple) -> usize {
         return addr;
     }
 
-    let ihl: u8 = (pkt.data[ip_offset] & 0xf) * 4;
+    let ihl: u8 = (pkt.data[offset] & 0xf) * 4;
 
-    let next_offset: usize = ip_offset + ihl as usize;
+    let next_offset: usize = offset + ihl as usize;
 
-    fivetuple.l3_src = getaddr(&pkt, ip_offset, 12) as u64;
-    fivetuple.l3_dst = getaddr(&pkt, ip_offset, 12) as u64;
-    fivetuple.next_proto = pkt.data[ip_offset + 9];
+    fivetuple.next_proto = pkt.data[offset + 9];
+    fivetuple.l3_src = getaddr(&pkt, offset, 12) as u64;
+    fivetuple.l3_dst = getaddr(&pkt, offset, 16) as u64;
 
     return next_offset;
 }
 
-fn handle_unknown(_pkt: &Packet, _fivetuple: &mut FiveTuple) -> usize {
-    println!("Not implemented");
+fn handle_ipv6(
+    pkt: &Packet,
+    offset: usize,
+    fivetuple: &mut FiveTuple,
+) -> usize {
+    fn getaddr(pkt: &Packet, ip_offset: usize, pos: usize) -> u64 {
+        let mut addr = 0;
+        for i in 0..7 {
+            addr = addr | {
+                (pkt.data[ip_offset + (pos + i)] as u64) << 56 - (8 * i)
+            };
+        }
+        return addr;
+    }
+
+    fivetuple.next_proto = pkt.data[offset + 6];
+    fivetuple.l3_src = getaddr(&pkt, offset, 8) as u64;
+    fivetuple.l3_dst = getaddr(&pkt, offset, 24) as u64;
+
+    return offset + 40;
+}
+
+fn handle_unknown(
+    _pkt: &Packet,
+    _offset: usize,
+    _fivetuple: &mut FiveTuple,
+) -> usize {
+    // println!("Ethertype not implemented");
     return 0;
 }
 
@@ -87,9 +118,20 @@ fn main() {
 
         let eth_callback = match get_ethertype(&pkt) {
             Ethertype::IPV4 => handle_ipv4,
+            Ethertype::IPV6 => handle_ipv6,
             _ => handle_unknown,
         };
-        let next_offset = eth_callback(&pkt, &mut fivetuple);
+        let next_offset = eth_callback(&pkt, 14, &mut fivetuple);
+
+        match fivetuple.next_proto {
+            TCP | UDP => {
+                fivetuple.l4_sport = ((pkt.data[next_offset] as u16) << 8)
+                    | pkt.data[next_offset + 1] as u16;
+                fivetuple.l4_dport = ((pkt.data[next_offset + 2] as u16) << 8)
+                    | pkt.data[next_offset + 3] as u16;
+            }
+            _ => {}
+        }
 
         println!("[{}] {} -- {}", ts, fivetuple, next_offset);
     }
