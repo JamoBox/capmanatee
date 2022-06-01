@@ -1,11 +1,11 @@
 // 5 tuples and number of packets for each
 mod ether;
 
-use std::fmt;
 use chrono::NaiveDateTime;
 use pcap::{Device, Packet};
+use std::fmt;
 
-use ether::{Ethertype, to_ethertype};
+use ether::{to_ethertype, Ethertype};
 
 struct FiveTuple {
     l3_src: u64,
@@ -17,15 +17,25 @@ struct FiveTuple {
 
 impl FiveTuple {
     fn new() -> Self {
-        Self { l3_src: 0, l3_dst: 0, next_proto: 0, l4_sport: 0, l4_dport: 0 }
+        Self {
+            l3_src: 0,
+            l3_dst: 0,
+            next_proto: 0,
+            l4_sport: 0,
+            l4_dport: 0,
+        }
     }
 }
 
 impl fmt::Display for FiveTuple {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{} -> {}:{} ({})",  
-            self.l3_src, self.l4_sport,
-            self.l3_dst, self.l4_dport,
+        write!(
+            f,
+            "{}:{} -> {}:{} ({})",
+            self.l3_src,
+            self.l4_sport,
+            self.l3_dst,
+            self.l4_dport,
             self.next_proto
         )
     }
@@ -61,9 +71,7 @@ fn handle_unknown(_pkt: &Packet, _fivetuple: &mut FiveTuple) -> usize {
 }
 
 fn get_ethertype(pkt: &Packet) -> Ethertype {
-    let value: u16 = {
-        ((pkt.data[12] as u16) << 8) | (pkt.data[13] as u16)
-    };
+    let value: u16 = ((pkt.data[12] as u16) << 8) | (pkt.data[13] as u16);
     return to_ethertype(value);
 }
 
