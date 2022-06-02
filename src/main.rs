@@ -4,15 +4,18 @@ mod ether;
 use chrono::NaiveDateTime;
 use pcap::{Device, Packet};
 use std::fmt;
+use std::collections::HashMap;
 
 use ether::{to_ethertype, Ethertype};
 
 const TCP: u8 = 6;
 const UDP: u8 = 17;
 
+#[derive(Eq, PartialEq, Hash)]
 struct FiveTuple {
-    l3_src: u64,
-    l3_dst: u64,
+    ether: Ethertype,
+    l3_src: u128,
+    l3_dst: u128,
     next_proto: u8,
     l4_sport: u16,
     l4_dport: u16,
@@ -21,6 +24,7 @@ struct FiveTuple {
 impl FiveTuple {
     fn new() -> Self {
         Self {
+            ether: Ethertype::UNKNOWN,
             l3_src: 0,
             l3_dst: 0,
             next_proto: 0,
@@ -32,12 +36,40 @@ impl FiveTuple {
 
 impl fmt::Display for FiveTuple {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut l3_src = String::new();
+        let mut l3_dst = String::new();
+
+        fn v6_convert(addr: u128, formatted: &mut String) {
+            let bytes = addr.to_be_bytes(); 
+            formatted.push_str(&format!("{:02x}{:02x}", bytes[0], bytes[1]));
+            for i in (2..16).step_by(2) {
+                formatted.push_str(&format!(":{:02x}{:02x}", bytes[i], bytes[i + 1]));
+            }
+        }
+
+        fn v4_convert(addr: u128, formatted: &mut String) {
+            let bytes = (addr as u32).to_be_bytes();
+            formatted.push_str(&format!("{}", bytes[0]));
+            for i in 1..4 {
+                formatted.push_str(&format!(".{}", bytes[i]));
+            }
+        }
+
+        if self.ether == Ethertype::IPV6 {
+            v6_convert(self.l3_src, &mut l3_src);
+            v6_convert(self.l3_dst, &mut l3_dst);
+        }
+        if self.ether == Ethertype::IPV4 {
+            v4_convert(self.l3_src, &mut l3_src);
+            v4_convert(self.l3_dst, &mut l3_dst);
+        }
+
         write!(
             f,
             "{}:{} -> {}:{} ({})",
-            self.l3_src,
+            l3_src,
             self.l4_sport,
-            self.l3_dst,
+            l3_dst,
             self.l4_dport,
             self.next_proto
         )
@@ -51,7 +83,7 @@ fn handle_ipv4(
 ) -> usize {
     fn getaddr(pkt: &Packet, ip_offset: usize, pos: usize) -> u32 {
         let mut addr = 0;
-        for i in 0..3 {
+        for i in 0..4 {
             addr = addr | {
                 (pkt.data[ip_offset + (pos + i)] as u32) << 24 - (8 * i)
             };
@@ -64,8 +96,8 @@ fn handle_ipv4(
     let next_offset: usize = offset + ihl as usize;
 
     fivetuple.next_proto = pkt.data[offset + 9];
-    fivetuple.l3_src = getaddr(&pkt, offset, 12) as u64;
-    fivetuple.l3_dst = getaddr(&pkt, offset, 16) as u64;
+    fivetuple.l3_src = getaddr(&pkt, offset, 12) as u128;
+    fivetuple.l3_dst = getaddr(&pkt, offset, 16) as u128;
 
     return next_offset;
 }
@@ -75,19 +107,19 @@ fn handle_ipv6(
     offset: usize,
     fivetuple: &mut FiveTuple,
 ) -> usize {
-    fn getaddr(pkt: &Packet, ip_offset: usize, pos: usize) -> u64 {
+    fn getaddr(pkt: &Packet, ip_offset: usize, pos: usize) -> u128 {
         let mut addr = 0;
-        for i in 0..7 {
+        for i in 0..16 {
             addr = addr | {
-                (pkt.data[ip_offset + (pos + i)] as u64) << 56 - (8 * i)
+                (pkt.data[ip_offset + (pos + i)] as u128) << 120 - (8 * i)
             };
         }
         return addr;
     }
 
     fivetuple.next_proto = pkt.data[offset + 6];
-    fivetuple.l3_src = getaddr(&pkt, offset, 8) as u64;
-    fivetuple.l3_dst = getaddr(&pkt, offset, 24) as u64;
+    fivetuple.l3_src = getaddr(&pkt, offset, 8) as u128;
+    fivetuple.l3_dst = getaddr(&pkt, offset, 24) as u128;
 
     return offset + 40;
 }
@@ -108,15 +140,18 @@ fn get_ethertype(pkt: &Packet) -> Ethertype {
 
 fn main() {
     let mut dev = Device::lookup().unwrap().open().unwrap();
+    let mut pktmap = HashMap::<FiveTuple, u128>::new();
 
     while let Ok(pkt) = dev.next() {
         let ts = NaiveDateTime::from_timestamp(
             pkt.header.ts.tv_sec,
             pkt.header.ts.tv_usec as u32,
         );
+
         let mut fivetuple = FiveTuple::new();
 
-        let eth_callback = match get_ethertype(&pkt) {
+        fivetuple.ether = get_ethertype(&pkt);
+        let eth_callback = match fivetuple.ether {
             Ethertype::IPV4 => handle_ipv4,
             Ethertype::IPV6 => handle_ipv6,
             _ => handle_unknown,
@@ -133,6 +168,11 @@ fn main() {
             _ => {}
         }
 
-        println!("[{}] {} -- {}", ts, fivetuple, next_offset);
+        print!("[{}] {} -- ", ts, fivetuple);
+        let count = pktmap.entry(fivetuple).or_insert(0);
+        *count += 1;
+        println!("{}", count);
+
+
     }
 }

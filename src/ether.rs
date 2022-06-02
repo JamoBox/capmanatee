@@ -4,7 +4,7 @@ pub const IPV4: u16 = 0x0800;
 pub const IPV6: u16 = 0x86dd;
 
 #[repr(u16)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum Ethertype {
     IPV4 = IPV4,
     IPV6 = IPV6,
