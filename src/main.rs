@@ -4,8 +4,8 @@ use ctrlc;
 use pcap::{Device, Packet};
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 const TCP: u8 = 6;
 const UDP: u8 = 17;
@@ -171,7 +171,8 @@ fn main() {
 
     ctrlc::set_handler(move || {
         _running.store(false, Ordering::SeqCst);
-    }).unwrap();
+    })
+    .unwrap();
 
     while let Ok(pkt) = dev.next() {
         let ts = NaiveDateTime::from_timestamp(
