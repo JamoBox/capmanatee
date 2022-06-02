@@ -3,8 +3,8 @@ mod ether;
 
 use chrono::NaiveDateTime;
 use pcap::{Device, Packet};
-use std::fmt;
 use std::collections::HashMap;
+use std::fmt;
 
 use ether::{to_ethertype, Ethertype};
 
@@ -40,10 +40,14 @@ impl fmt::Display for FiveTuple {
         let mut l3_dst = String::new();
 
         fn v6_convert(addr: u128, formatted: &mut String) {
-            let bytes = addr.to_be_bytes(); 
+            let bytes = addr.to_be_bytes();
             formatted.push_str(&format!("{:02x}{:02x}", bytes[0], bytes[1]));
             for i in (2..16).step_by(2) {
-                formatted.push_str(&format!(":{:02x}{:02x}", bytes[i], bytes[i + 1]));
+                formatted.push_str(&format!(
+                    ":{:02x}{:02x}",
+                    bytes[i],
+                    bytes[i + 1]
+                ));
             }
         }
 
@@ -67,11 +71,7 @@ impl fmt::Display for FiveTuple {
         write!(
             f,
             "{}:{} -> {}:{} ({})",
-            l3_src,
-            self.l4_sport,
-            l3_dst,
-            self.l4_dport,
-            self.next_proto
+            l3_src, self.l4_sport, l3_dst, self.l4_dport, self.next_proto
         )
     }
 }
@@ -172,7 +172,5 @@ fn main() {
         let count = pktmap.entry(fivetuple).or_insert(0);
         *count += 1;
         println!("{}", count);
-
-
     }
 }
