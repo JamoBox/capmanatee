@@ -1,2 +1,2 @@
 # capmanatee
-Packet Capture tool with all the grace of a manatee
+Messing around with PCAPs while learning Rust. 
