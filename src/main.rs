@@ -2,9 +2,12 @@
 mod ether;
 
 use chrono::NaiveDateTime;
+use ctrlc;
 use pcap::{Device, Packet};
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use ether::{to_ethertype, Ethertype};
 
@@ -142,6 +145,13 @@ fn main() {
     let mut dev = Device::lookup().unwrap().open().unwrap();
     let mut pktmap = HashMap::<FiveTuple, u128>::new();
 
+    let running = Arc::new(AtomicBool::new(true));
+    let _running = running.clone();
+
+    ctrlc::set_handler(move || {
+        _running.store(false, Ordering::SeqCst);
+    }).unwrap();
+
     while let Ok(pkt) = dev.next() {
         let ts = NaiveDateTime::from_timestamp(
             pkt.header.ts.tv_sec,
@@ -172,5 +182,18 @@ fn main() {
         let count = pktmap.entry(fivetuple).or_insert(0);
         *count += 1;
         println!("{}", count);
+
+        if !running.load(Ordering::SeqCst) {
+            break;
+        }
+    }
+
+    let mut scored: Vec<_> = pktmap.iter().collect();
+    scored.sort_by(|a, b| a.1.cmp(b.1));
+
+    println!("");
+    println!(" -- STATS -- ");
+    for entry in scored.iter() {
+        println!("{}: {}", entry.0, entry.1);
     }
 }
