@@ -1,5 +1,6 @@
 // 5 tuples and number of packets for each
 use chrono::NaiveDateTime;
+use clap::Parser;
 use ctrlc;
 use pcap::{Device, Packet};
 use std::collections::HashMap;
@@ -162,7 +163,18 @@ fn get_ethertype(pkt: &Packet) -> Ethertype {
     return to_ethertype(value);
 }
 
+#[derive(Parser)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    #[clap(short, long)]
+    verbose: bool,
+}
+
 fn main() {
+    let args = Args::parse();
+
+    let verbose: bool = args.verbose;
+
     let mut dev = Device::lookup().unwrap().open().unwrap();
     let mut pktmap = HashMap::<FiveTuple, u128>::new();
 
@@ -200,10 +212,16 @@ fn main() {
             _ => {}
         }
 
-        print!("[{}] {} -- ", ts, fivetuple);
+        if verbose {
+            print!("[{}] {} -- ", ts, fivetuple);
+        }
+
         let count = pktmap.entry(fivetuple).or_insert(0);
         *count += 1;
-        println!("{}", count);
+
+        if verbose {
+            println!("{}", count);
+        }
 
         if !running.load(Ordering::SeqCst) {
             break;

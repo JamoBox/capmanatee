@@ -7,6 +7,6 @@ edition = "2021"
 
 [dependencies]
 pcap = "0.9"
-clap = "3.1"
+clap = {version = "3.1", features = ["derive"]}
 chrono = "0.4"
 ctrlc = "3.2"
